@@ -276,6 +276,8 @@ window.doForgotPassword = async () => {
     else showLoginErr('寄送失敗：'+e.message);
   }
 };
+
+window.doLogout = async () => {
   if(unsub) unsub();
   await signOut(auth);
 };
