@@ -210,97 +210,92 @@ select.input{-webkit-appearance:none;appearance:none;background-image:url("data:
 
 <div id="toast"></div>
 
-<!-- ══ FIREBASE ══ -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, sendPasswordResetEmail }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, onSnapshot, setDoc, getDoc }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
+<!-- ══ FIREBASE (loaded as classic script via CDN compat) ══ -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
 const firebaseConfig = {
   apiKey: "AIzaSyDPRlYuaKEDDG_0X_4b8A-4U7F-XhgImQw",
   authDomain: "couples-budget-c1b31.firebaseapp.com",
   projectId: "couples-budget-c1b31",
   storageBucket: "couples-budget-c1b31.firebasestorage.app",
   messagingSenderId: "730401314292",
-  appId: "1:730401314292:web:ceafc338be0aa19e8a55a1",
-  measurementId: "G-KMZQ28H3X0"
+  appId: "1:730401314292:web:ceafc338be0aa19e8a55a1"
 };
-
-const app  = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db   = getFirestore(app);
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.firestore();
 let unsub  = null;
 
-await setPersistence(auth, browserLocalPersistence);
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
-function syncDot(s){ const d=document.getElementById('syncDot'); d.className='sync-dot '+s; }
+function syncDot(s){ const d=document.getElementById('syncDot'); if(d) d.className='sync-dot '+s; }
+function showLoginErr(msg){
+  const el=document.getElementById('loginErr');
+  el.textContent=msg;
+  el.style.display=msg?'block':'none';
+  el.style.color=msg.startsWith('✅')?'#2e7d32':'#c0505a';
+}
 
-// ── Auth ──
-window.doLogin = async () => {
+// ── Auth functions (global, callable from onclick) ──
+function doLogin(){
   const email=document.getElementById('loginEmail').value.trim();
   const pass=document.getElementById('loginPassword').value;
   if(!email||!pass){ showLoginErr('請填寫電子郵件和密碼'); return; }
   showLoginErr('');
-  try { await signInWithEmailAndPassword(auth,email,pass); }
-  catch(e){
-    if(e.code==='auth/invalid-credential') showLoginErr('帳號或密碼錯誤，請確認後再試');
-    else showLoginErr('登入失敗：'+e.message);
-  }
-};
+  auth.signInWithEmailAndPassword(email,pass)
+    .catch(e=>{
+      if(e.code==='auth/invalid-credential'||e.code==='auth/wrong-password'||e.code==='auth/user-not-found')
+        showLoginErr('帳號或密碼錯誤，請確認後再試');
+      else showLoginErr('登入失敗：'+e.message);
+    });
+}
 
-window.doRegister = async () => {
+function doRegister(){
   const email=document.getElementById('loginEmail').value.trim();
   const pass=document.getElementById('loginPassword').value;
   if(!email||!pass){ showLoginErr('請填寫電子郵件和密碼'); return; }
   if(pass.length<6){ showLoginErr('密碼至少需要 6 個字元'); return; }
   showLoginErr('');
-  try { await createUserWithEmailAndPassword(auth,email,pass); }
-  catch(e){
-    if(e.code==='auth/email-already-in-use') showLoginErr('此信箱已註冊，請直接登入');
-    else showLoginErr('註冊失敗：'+e.message);
-  }
-};
+  auth.createUserWithEmailAndPassword(email,pass)
+    .catch(e=>{
+      if(e.code==='auth/email-already-in-use') showLoginErr('此信箱已註冊，請直接登入');
+      else showLoginErr('註冊失敗：'+e.message);
+    });
+}
 
-window.doForgotPassword = async () => {
-  const email = document.getElementById('loginEmail').value.trim();
+function doForgotPassword(){
+  const email=document.getElementById('loginEmail').value.trim();
   if(!email){ showLoginErr('請先填寫電子郵件，再按忘記密碼'); return; }
   showLoginErr('');
-  try {
-    await sendPasswordResetEmail(auth, email);
-    showLoginErr('✅ 重設密碼信已寄出！請去信箱查收');
-    document.getElementById('loginErr').style.color='#2e7d32';
-  } catch(e) {
-    if(e.code==='auth/user-not-found') showLoginErr('找不到此信箱，請確認是否已註冊');
-    else showLoginErr('寄送失敗：'+e.message);
-  }
-};
+  auth.sendPasswordResetEmail(email)
+    .then(()=>showLoginErr('✅ 重設密碼信已寄出！請去信箱查收'))
+    .catch(e=>{
+      if(e.code==='auth/user-not-found') showLoginErr('找不到此信箱，請確認是否已註冊');
+      else showLoginErr('寄送失敗：'+e.message);
+    });
+}
 
-window.doLogout = async () => {
+function doLogout(){
   if(unsub) unsub();
-  await signOut(auth);
-};
-
-function showLoginErr(msg){
-  const el=document.getElementById('loginErr');
-  el.textContent=msg; el.style.display=msg?'block':'none';
+  auth.signOut();
 }
 
 // ── Auth State ──
-onAuthStateChanged(auth, user => {
+auth.onAuthStateChanged(user => {
   if(user){
     document.getElementById('loginScreen').style.display='none';
     document.getElementById('appShell').style.display='flex';
     document.getElementById('userEmail').textContent=user.email;
     syncDot('syncing');
-    const ref=doc(db,'users',user.uid,'data','main');
-    unsub=onSnapshot(ref, snap => {
-      if(snap.exists()){
+    const ref=db.collection('users').doc(user.uid).collection('data').doc('main');
+    unsub=ref.onSnapshot(snap=>{
+      if(snap.exists){
         const d=snap.data();
-        window._records  = d.records  || [];
-        window._cats     = d.cats     || window._defaultCats();
-        window._persons  = d.persons  || ['老公','老婆'];
+        window._records = d.records  || [];
+        window._cats    = d.cats     || window._defaultCats();
+        window._persons = d.persons  || ['老公','老婆'];
       } else {
         window._records = [];
         window._cats    = window._defaultCats();
@@ -308,18 +303,16 @@ onAuthStateChanged(auth, user => {
       }
       syncDot('ok');
       window.refreshAll();
-    }, () => syncDot('err'));
+    }, ()=>syncDot('err'));
 
-    window._save = async () => {
+    window._save = () => {
       syncDot('syncing');
-      try {
-        await setDoc(doc(db,'users',user.uid,'data','main'),{
-          records: window._records,
-          cats:    window._cats,
-          persons: window._persons,
-        });
-        syncDot('ok');
-      } catch(e){ syncDot('err'); showToast('儲存失敗','error'); }
+      ref.set({
+        records: window._records,
+        cats:    window._cats,
+        persons: window._persons,
+      }).then(()=>syncDot('ok'))
+        .catch(()=>{ syncDot('err'); showToast('儲存失敗','error'); });
     };
   } else {
     document.getElementById('loginScreen').style.display='flex';
@@ -497,7 +490,7 @@ async function confirmAdd(){
   if(!addCat){ document.getElementById('addErr').textContent='請選擇類別'; return; }
   const rec={id:Date.now(),type:addType,amount:Number(addAmt),category:addCat,person:addPerson,note:addNote,date:addDate};
   window._records.unshift(rec);
-  await window._save();
+  window._save();
   addAmt=''; addNote=''; addDate=todayStr();
   showToast('✅ 記帳成功！');
   switchTab('dashboard', document.querySelectorAll('.nav-btn')[0]);
@@ -602,7 +595,7 @@ async function settAdd(){
     if((window._cats[settTab]||[]).includes(v)){showToast('類別已存在','error');return;}
     window._cats[settTab]=[...(window._cats[settTab]||[]),v];
   }
-  settNew=''; await window._save(); showToast('✅ 新增成功！'); renderSettings();
+  settNew=''; window._save(); showToast('✅ 新增成功！'); renderSettings();
 }
 
 async function settRemove(item){
@@ -612,7 +605,7 @@ async function settRemove(item){
   } else {
     window._cats[settTab]=(window._cats[settTab]||[]).filter(c=>c!==item);
   }
-  await window._save(); showToast('已刪除','error'); renderSettings();
+  window._save(); showToast('已刪除','error'); renderSettings();
 }
 
 // ── Delete ──
@@ -621,7 +614,7 @@ function closeConfirm(){ document.getElementById('confirmModal').classList.remov
 async function execDel(){
   if(!pendingDel) return;
   window._records=window._records.filter(r=>r.id!==pendingDel);
-  await window._save();
+  window._save();
   closeConfirm(); showToast('已刪除','error'); renderTab(curTab);
 }
 
