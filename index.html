@@ -161,6 +161,7 @@ select.input{-webkit-appearance:none;appearance:none;background-image:url("data:
     <div id="loginErr" class="login-err"></div>
     <button class="btn btn-gold btn-full" style="margin-top:8px" onclick="doLogin()">登入</button>
     <button class="btn btn-outline btn-full" style="margin-top:10px" onclick="doRegister()">📝 註冊新帳號</button>
+    <button class="btn btn-outline btn-full" style="margin-top:10px;color:#6b9ec4;border-color:#d6e8f5" onclick="doForgotPassword()">🔑 忘記密碼？寄重設信</button>
     <div class="login-tip">
       <span>💡</span>
       <span>夫妻兩人用同一組帳號密碼登入，<br>資料即時同步，不管用哪支手機都看得到</span>
@@ -212,7 +213,7 @@ select.input{-webkit-appearance:none;appearance:none;background-image:url("data:
 <!-- ══ FIREBASE ══ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence }
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, sendPasswordResetEmail }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, doc, onSnapshot, setDoc, getDoc }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -262,7 +263,19 @@ window.doRegister = async () => {
   }
 };
 
-window.doLogout = async () => {
+window.doForgotPassword = async () => {
+  const email = document.getElementById('loginEmail').value.trim();
+  if(!email){ showLoginErr('請先填寫電子郵件，再按忘記密碼'); return; }
+  showLoginErr('');
+  try {
+    await sendPasswordResetEmail(auth, email);
+    showLoginErr('✅ 重設密碼信已寄出！請去信箱查收');
+    document.getElementById('loginErr').style.color='#2e7d32';
+  } catch(e) {
+    if(e.code==='auth/user-not-found') showLoginErr('找不到此信箱，請確認是否已註冊');
+    else showLoginErr('寄送失敗：'+e.message);
+  }
+};
   if(unsub) unsub();
   await signOut(auth);
 };
