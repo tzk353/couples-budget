@@ -14,7 +14,7 @@ body{background:#fdf6e3;color:#1a1a1a;font-family:'Noto Serif TC','Georgia',seri
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-#loginScreen{position:fixed;inset:0;background:linear-gradient(135deg,#fdf0f3,#fdf6e3,#eff6fc);z-index:999;display:flex;align-items:center;justify-content:center;padding:24px;}
+#loginScreen{position:fixed;inset:0;background:linear-gradient(135deg,#fdf0f3,#fdf6e3,#eff6fc);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;}
 .login-card{background:#fff;border-radius:24px;padding:36px 24px;width:100%;max-width:400px;box-shadow:0 8px 40px rgba(201,168,76,.18);border:1px solid #e8d5a3;text-align:center;}
 .login-err{font-size:12px;margin-top:8px;display:none;line-height:1.6;}
 #appShell{display:none;flex-direction:column;min-height:100vh;max-width:480px;margin:0 auto;background:#fff;}
@@ -168,431 +168,214 @@ select.input{-webkit-appearance:none;appearance:none;background-image:url("data:
 
 <div id="toast"></div>
 
-<!-- Firebase SDK -->
-<script>
-// Load Firebase scripts dynamically to handle errors gracefully
-(function() {
-  var scripts = [
-    'https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js',
-    'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js',
-    'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js'
-  ];
-  var loaded = 0;
-  function loadNext(i) {
-    if (i >= scripts.length) { initApp(); return; }
-    var s = document.createElement('script');
-    s.src = scripts[i];
-    s.onload = function() { loaded++; loadNext(i+1); };
-    s.onerror = function() {
-      var el = document.getElementById('loginErr');
-      el.textContent = 'Firebase 載入失敗，請重新整理頁面';
-      el.style.display = 'block'; el.style.color = '#c0505a';
-    };
-    document.head.appendChild(s);
+<!-- ══ 完全照抄庫存系統的 Firebase module 載入方式 ══ -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, sendPasswordResetEmail }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, onSnapshot, setDoc }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const app  = initializeApp({apiKey:"AIzaSyDPRlYuaKEDDG_0X_4b8A-4U7F-XhgImQw",authDomain:"couples-budget-c1b31.firebaseapp.com",projectId:"couples-budget-c1b31",storageBucket:"couples-budget-c1b31.firebasestorage.app",messagingSenderId:"730401314292",appId:"1:730401314292:web:ceafc338be0aa19e8a55a1"});
+const auth = getAuth(app);
+const db   = getFirestore(app);
+let unsub  = null, dbRef = null;
+
+setPersistence(auth, browserLocalPersistence).catch(()=>{});
+
+// ── helper refs ──
+const $ = id => document.getElementById(id);
+function showLoginErr(m,g){$('loginErr').textContent=m;$('loginErr').style.display=m?'block':'none';$('loginErr').style.color=g?'#2e7d32':'#c0505a';}
+function syncDot(s){const d=$('syncDot');if(d)d.className='sync-dot '+s;}
+let _tt;
+function showToast(m,t){const e=$('toast');e.textContent=m;e.style.background=t==='err'?'#c0505a':'#1a1a1a';e.style.color='#fff';e.style.display='block';clearTimeout(_tt);_tt=setTimeout(()=>e.style.display='none',2500);}
+function saveDB(){if(!dbRef)return;syncDot('syncing');setDoc(dbRef,{records:W._records,cats:W._cats,persons:W._persons}).then(()=>syncDot('ok')).catch(()=>{syncDot('err');showToast('儲存失敗','err');});}
+window._saveDB = saveDB;
+
+// ── auth events ──
+$('btnLogin').addEventListener('click',()=>{
+  const em=$('loginEmail').value.trim(), pw=$('loginPassword').value;
+  if(!em||!pw){showLoginErr('請填寫電子郵件和密碼');return;}
+  showLoginErr('');
+  signInWithEmailAndPassword(auth,em,pw).catch(e=>{
+    if(['auth/invalid-credential','auth/wrong-password','auth/user-not-found'].includes(e.code))showLoginErr('帳號或密碼錯誤，請確認後再試');
+    else showLoginErr('登入失敗：'+e.message);
+  });
+});
+$('btnRegister').addEventListener('click',()=>{
+  const em=$('loginEmail').value.trim(), pw=$('loginPassword').value;
+  if(!em||!pw){showLoginErr('請填寫電子郵件和密碼');return;}
+  if(pw.length<6){showLoginErr('密碼至少需要 6 個字元');return;}
+  showLoginErr('');
+  createUserWithEmailAndPassword(auth,em,pw).catch(e=>{
+    if(e.code==='auth/email-already-in-use')showLoginErr('此信箱已註冊，請直接登入');
+    else showLoginErr('註冊失敗：'+e.message);
+  });
+});
+$('btnForgot').addEventListener('click',()=>{
+  const em=$('loginEmail').value.trim();
+  if(!em){showLoginErr('請先填寫電子郵件');return;}
+  sendPasswordResetEmail(auth,em).then(()=>showLoginErr('✅ 重設密碼信已寄出！請去信箱查收',true)).catch(e=>showLoginErr('寄送失敗：'+e.message));
+});
+$('btnLogout').addEventListener('click',()=>{if(unsub)unsub();signOut(auth);});
+
+// ── auth state ──
+onAuthStateChanged(auth, user=>{
+  if(user){
+    $('loginScreen').style.display='none';
+    $('appShell').style.display='flex';
+    $('userEmail').textContent=user.email;
+    syncDot('syncing');
+    dbRef=doc(db,'users',user.uid,'data','main');
+    unsub=onSnapshot(dbRef,snap=>{
+      if(snap.exists()){const d=snap.data();W._records=d.records||[];W._cats=d.cats||W.defaultCats();W._persons=d.persons||['老公','老婆'];}
+      else{W._records=[];W._cats=W.defaultCats();W._persons=['老公','老婆'];}
+      syncDot('ok');W.renderTab(W.curTab);
+    },()=>syncDot('err'));
+  }else{
+    $('loginScreen').style.display='flex';
+    $('appShell').style.display='none';
+    W._records=[];W._cats=W.defaultCats();W._persons=['老公','老婆'];dbRef=null;
   }
-  loadNext(0);
-})();
+});
 </script>
 
+<!-- ══ App Logic (plain script, communicates with module via window.W) ══ -->
 <script>
-// ═══════════════════════════════════════════════════════
-// APP — runs after Firebase loaded via initApp()
-// ═══════════════════════════════════════════════════════
-var _auth, _db, _unsub, _dbRef;
-var _records=[], _persons=['老公','老婆'];
-var _cats={income:['薪水','獎金','投資','副業','跑車入帳','跑車現金','其他收入'],expense:['餐飲','房貸','車貸','信用卡費','交通','購物','娛樂','醫療','水電瓦斯','電話費','保險','教育','旅遊','日用品','其他支出']};
-
-function defaultCats(){return{income:['薪水','獎金','投資','副業','跑車入帳','跑車現金','其他收入'],expense:['餐飲','房貸','車貸','信用卡費','交通','購物','娛樂','醫療','水電瓦斯','電話費','保險','教育','旅遊','日用品','其他支出']};}
-
-var CAT={
-  '薪水':{i:'💼',c:'#4CAF50',b:'#E8F5E9'},'獎金':{i:'🎁',c:'#8BC34A',b:'#F1F8E9'},'投資':{i:'📈',c:'#00BCD4',b:'#E0F7FA'},
-  '副業':{i:'💡',c:'#FF9800',b:'#FFF3E0'},'跑車入帳':{i:'🚗',c:'#E91E63',b:'#FCE4EC'},'跑車現金':{i:'💵',c:'#C2185B',b:'#F8BBD9'},
-  '其他收入':{i:'💰',c:'#9C27B0',b:'#F3E5F5'},'餐飲':{i:'🍽️',c:'#FF5722',b:'#FBE9E7'},'房貸':{i:'🏠',c:'#795548',b:'#EFEBE9'},
-  '車貸':{i:'🚘',c:'#607D8B',b:'#ECEFF1'},'信用卡費':{i:'💳',c:'#3F51B5',b:'#E8EAF6'},'交通':{i:'🚇',c:'#2196F3',b:'#E3F2FD'},
-  '購物':{i:'🛍️',c:'#E91E63',b:'#FCE4EC'},'娛樂':{i:'🎬',c:'#9C27B0',b:'#F3E5F5'},'醫療':{i:'🏥',c:'#F44336',b:'#FFEBEE'},
-  '水電瓦斯':{i:'💧',c:'#03A9F4',b:'#E1F5FE'},'電話費':{i:'📱',c:'#009688',b:'#E0F2F1'},'保險':{i:'🛡️',c:'#4CAF50',b:'#E8F5E9'},
-  '教育':{i:'📚',c:'#FF9800',b:'#FFF3E0'},'旅遊':{i:'✈️',c:'#00BCD4',b:'#E0F7FA'},'日用品':{i:'🧴',c:'#8BC34A',b:'#F1F8E9'},
-  '其他支出':{i:'📦',c:'#9E9E9E',b:'#F5F5F5'}
+const W = window.W = {
+  curTab:'dashboard',
+  dY:new Date().getFullYear(), dM:new Date().getMonth(),
+  aType:'expense', aPerson:'', aCat:'', aAmt:'', aNote:'', aDate:'',
+  rMode:'month', rY:new Date().getFullYear(), rM:new Date().getMonth(), rS:'', rE:'',
+  hF:'all', hS:'',
+  sTab:'expense', sNew:'',
+  editId:null, editType:'expense', editCat:'',
+  pendingDel:null,
+  _records:[], _persons:['老公','老婆'],
+  _cats:{income:['薪水','獎金','投資','副業','跑車入帳','跑車現金','其他收入'],expense:['餐飲','房貸','車貸','信用卡費','交通','購物','娛樂','醫療','水電瓦斯','電話費','保險','教育','旅遊','日用品','其他支出']},
+  defaultCats(){return{income:['薪水','獎金','投資','副業','跑車入帳','跑車現金','其他收入'],expense:['餐飲','房貸','車貸','信用卡費','交通','購物','娛樂','醫療','水電瓦斯','電話費','保險','教育','旅遊','日用品','其他支出']};},
 };
+
+const CAT={'薪水':{i:'💼',c:'#4CAF50',b:'#E8F5E9'},'獎金':{i:'🎁',c:'#8BC34A',b:'#F1F8E9'},'投資':{i:'📈',c:'#00BCD4',b:'#E0F7FA'},'副業':{i:'💡',c:'#FF9800',b:'#FFF3E0'},'跑車入帳':{i:'🚗',c:'#E91E63',b:'#FCE4EC'},'跑車現金':{i:'💵',c:'#C2185B',b:'#F8BBD9'},'其他收入':{i:'💰',c:'#9C27B0',b:'#F3E5F5'},'餐飲':{i:'🍽️',c:'#FF5722',b:'#FBE9E7'},'房貸':{i:'🏠',c:'#795548',b:'#EFEBE9'},'車貸':{i:'🚘',c:'#607D8B',b:'#ECEFF1'},'信用卡費':{i:'💳',c:'#3F51B5',b:'#E8EAF6'},'交通':{i:'🚇',c:'#2196F3',b:'#E3F2FD'},'購物':{i:'🛍️',c:'#E91E63',b:'#FCE4EC'},'娛樂':{i:'🎬',c:'#9C27B0',b:'#F3E5F5'},'醫療':{i:'🏥',c:'#F44336',b:'#FFEBEE'},'水電瓦斯':{i:'💧',c:'#03A9F4',b:'#E1F5FE'},'電話費':{i:'📱',c:'#009688',b:'#E0F2F1'},'保險':{i:'🛡️',c:'#4CAF50',b:'#E8F5E9'},'教育':{i:'📚',c:'#FF9800',b:'#FFF3E0'},'旅遊':{i:'✈️',c:'#00BCD4',b:'#E0F7FA'},'日用品':{i:'🧴',c:'#8BC34A',b:'#F1F8E9'},'其他支出':{i:'📦',c:'#9E9E9E',b:'#F5F5F5'}};
 function gc(n){return CAT[n]||{i:'🏷️',c:'#C9A84C',b:'#FDF6E3'};}
 function fmt(n){return 'NT$ '+Number(n).toLocaleString('zh-TW');}
 function todayStr(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-var MO=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-var _tt;
-function showToast(m,t){var e=document.getElementById('toast');e.textContent=m;e.style.background=t==='err'?'#c0505a':'#1a1a1a';e.style.color='#fff';e.style.display='block';clearTimeout(_tt);_tt=setTimeout(function(){e.style.display='none';},2500);}
-function syncDot(s){var d=document.getElementById('syncDot');if(d)d.className='sync-dot '+s;}
-function showLoginErr(m,g){var e=document.getElementById('loginErr');e.textContent=m;e.style.display=m?'block':'none';e.style.color=g?'#2e7d32':'#c0505a';}
+const MO=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+let _tt2;
+function showToast(m,t){var e=document.getElementById('toast');e.textContent=m;e.style.background=t==='err'?'#c0505a':'#1a1a1a';e.style.color='#fff';e.style.display='block';clearTimeout(_tt2);_tt2=setTimeout(()=>e.style.display='none',2500);}
+function saveDB(){if(window._saveDB)window._saveDB();}
 
-function saveDB(){
-  if(!_dbRef)return;
-  syncDot('syncing');
-  _dbRef.set({records:_records,cats:_cats,persons:_persons})
-    .then(function(){syncDot('ok');})
-    .catch(function(){syncDot('err');showToast('儲存失敗','err');});
-}
+function catGridHtml(type,active){return(W._cats[type]||[]).map(c=>{var cs=gc(c),on=active===c;return'<button class="cat-chip'+(on?' active':'')+'" style="'+(on?'background:'+cs.b+';border-color:'+cs.c+';':'')+'" data-cat="'+c+'"><span class="ci">'+cs.i+'</span><span class="cl" style="'+(on?'color:'+cs.c+';font-weight:700':'')+'">'+(c.length>4?c.substring(0,4)+'…':c)+'</span></button>';}).join('');}
+function recRowHtml(r){var cs=gc(r.category);return'<div class="rec-row"><div class="rec-left"><div class="cat-badge" style="background:'+cs.b+'">'+cs.i+'</div><div class="rec-info"><div class="rec-cat">'+r.category+' <span class="rec-person">· '+r.person+'</span></div>'+(r.note?'<div class="rec-note">'+r.note+'</div>':'')+'<div class="rec-date">'+r.date+'</div></div></div><div class="rec-right"><div class="rec-amt" style="color:'+(r.type==='income'?'#2e7d32':'#c0505a')+'">'+(r.type==='income'?'+':'-')+fmt(r.amount)+'</div><button class="edit-btn" data-id="'+r.id+'">✏️</button><button class="del-btn" data-id="'+r.id+'">✕</button></div></div>';}
+function bindRows(el){el.querySelectorAll('.edit-btn').forEach(b=>b.addEventListener('click',()=>openEdit(Number(b.dataset.id))));el.querySelectorAll('.del-btn').forEach(b=>b.addEventListener('click',()=>askDel(Number(b.dataset.id))));}
+function monthPickerHtml(y,m){var yrs=[];W._records.forEach(r=>{var yr=new Date(r.date).getFullYear();if(!yrs.includes(yr))yrs.push(yr);});if(!yrs.includes(new Date().getFullYear()))yrs.unshift(new Date().getFullYear());yrs.sort((a,b)=>b-a);return'<div class="month-picker"><select class="input" id="selY">'+yrs.map(yr=>'<option value="'+yr+'"'+(yr===y?' selected':'')+'>'+yr+'年</option>').join('')+'</select><select class="input" id="selM">'+MO.map((mo,i)=>'<option value="'+i+'"'+(i===m?' selected':'')+'>'+mo+'</option>').join('')+'</select></div>';}
 
-function initApp() {
-  try {
-    firebase.initializeApp({
-      apiKey:"AIzaSyDPRlYuaKEDDG_0X_4b8A-4U7F-XhgImQw",
-      authDomain:"couples-budget-c1b31.firebaseapp.com",
-      projectId:"couples-budget-c1b31",
-      storageBucket:"couples-budget-c1b31.firebasestorage.app",
-      messagingSenderId:"730401314292",
-      appId:"1:730401314292:web:ceafc338be0aa19e8a55a1"
-    });
-    _auth = firebase.auth();
-    _db   = firebase.firestore();
-  } catch(e) {
-    showLoginErr('初始化失敗：'+e.message);
-    return;
-  }
+W.renderTab = function(n){if(n==='dashboard')renderDashboard();else if(n==='add')renderAdd();else if(n==='report')renderReport();else if(n==='history')renderHistory();else if(n==='settings')renderSettings();};
+function goTab(name){document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-'+name));W.curTab=name;W.renderTab(name);}
 
-  try { _auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); } catch(e){}
+// Nav
+document.querySelectorAll('.nav-btn').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+btn.dataset.tab).classList.add('active');W.curTab=btn.dataset.tab;W.renderTab(W.curTab);}));
 
-  // ── Auth buttons ──
-  document.getElementById('btnLogin').addEventListener('click', function(){
-    var email=document.getElementById('loginEmail').value.trim();
-    var pass=document.getElementById('loginPassword').value;
-    if(!email||!pass){showLoginErr('請填寫電子郵件和密碼');return;}
-    showLoginErr('');
-    _auth.signInWithEmailAndPassword(email,pass).catch(function(e){
-      if(e.code==='auth/invalid-credential'||e.code==='auth/wrong-password'||e.code==='auth/user-not-found')
-        showLoginErr('帳號或密碼錯誤，請確認後再試');
-      else showLoginErr('登入失敗：'+e.message);
-    });
-  });
-
-  document.getElementById('btnRegister').addEventListener('click', function(){
-    var email=document.getElementById('loginEmail').value.trim();
-    var pass=document.getElementById('loginPassword').value;
-    if(!email||!pass){showLoginErr('請填寫電子郵件和密碼');return;}
-    if(pass.length<6){showLoginErr('密碼至少需要 6 個字元');return;}
-    showLoginErr('');
-    _auth.createUserWithEmailAndPassword(email,pass).catch(function(e){
-      if(e.code==='auth/email-already-in-use') showLoginErr('此信箱已註冊，請直接登入');
-      else showLoginErr('註冊失敗：'+e.message);
-    });
-  });
-
-  document.getElementById('btnForgot').addEventListener('click', function(){
-    var email=document.getElementById('loginEmail').value.trim();
-    if(!email){showLoginErr('請先填寫電子郵件');return;}
-    _auth.sendPasswordResetEmail(email)
-      .then(function(){showLoginErr('✅ 重設密碼信已寄出！請去信箱查收',true);})
-      .catch(function(e){showLoginErr('寄送失敗：'+e.message);});
-  });
-
-  document.getElementById('btnLogout').addEventListener('click', function(){
-    if(_unsub)_unsub();
-    _auth.signOut();
-  });
-
-  // ── Auth state ──
-  _auth.onAuthStateChanged(function(user){
-    if(user){
-      document.getElementById('loginScreen').style.display='none';
-      document.getElementById('appShell').style.display='flex';
-      document.getElementById('userEmail').textContent=user.email;
-      syncDot('syncing');
-      _dbRef=_db.collection('users').doc(user.uid).collection('data').doc('main');
-      _unsub=_dbRef.onSnapshot(function(snap){
-        if(snap.exists){var d=snap.data();_records=d.records||[];_cats=d.cats||defaultCats();_persons=d.persons||['老公','老婆'];}
-        else{_records=[];_cats=defaultCats();_persons=['老公','老婆'];}
-        syncDot('ok'); renderTab(curTab);
-      },function(){syncDot('err');});
-    } else {
-      document.getElementById('loginScreen').style.display='flex';
-      document.getElementById('appShell').style.display='none';
-      _records=[];_cats=defaultCats();_persons=['老公','老婆'];_dbRef=null;
-    }
-  });
-
-  // ── Nav ──
-  document.querySelectorAll('.nav-btn').forEach(function(btn){
-    btn.addEventListener('click',function(){
-      document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
-      btn.classList.add('active');
-      document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
-      document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
-      curTab=btn.dataset.tab; renderTab(curTab);
-    });
-  });
-
-  // ── Edit modal buttons ──
-  document.getElementById('editBtnExp').addEventListener('click',function(){editType='expense';editCat='';refreshEditType();});
-  document.getElementById('editBtnInc').addEventListener('click',function(){editType='income';editCat='';refreshEditType();});
-  document.getElementById('btnCancelEdit').addEventListener('click',function(){document.getElementById('editModal').classList.remove('open');});
-  document.getElementById('editModal').addEventListener('click',function(e){if(e.target===document.getElementById('editModal'))document.getElementById('editModal').classList.remove('open');});
-  document.getElementById('btnConfirmEdit').addEventListener('click', confirmEdit);
-
-  // ── Delete modal buttons ──
-  document.getElementById('btnExecDel').addEventListener('click',function(){
-    if(!pendingDel)return;
-    _records=_records.filter(function(r){return r.id!==pendingDel;});
-    saveDB(); pendingDel=null;
-    document.getElementById('confirmModal').classList.remove('open');
-    showToast('已刪除','err'); renderTab(curTab);
-  });
-  document.getElementById('btnCancelDel').addEventListener('click',function(){document.getElementById('confirmModal').classList.remove('open');pendingDel=null;});
-  document.getElementById('confirmModal').addEventListener('click',function(e){if(e.target===document.getElementById('confirmModal')){document.getElementById('confirmModal').classList.remove('open');pendingDel=null;}});
-}
-
-// ═══════════════════════════════════════════════
-// TABS
-// ═══════════════════════════════════════════════
-var curTab='dashboard';
-function renderTab(n){
-  if(n==='dashboard')renderDashboard();
-  else if(n==='add')renderAdd();
-  else if(n==='report')renderReport();
-  else if(n==='history')renderHistory();
-  else if(n==='settings')renderSettings();
-}
-function goTab(name){
-  document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.toggle('active',b.dataset.tab===name);});
-  document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.id==='tab-'+name);});
-  curTab=name; renderTab(name);
-}
-
-// ═══════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════
-function catGridHtml(type,active){
-  return (_cats[type]||[]).map(function(c){
-    var cs=gc(c),on=active===c;
-    return '<button class="cat-chip'+(on?' active':'')+'" style="'+(on?'background:'+cs.b+';border-color:'+cs.c+';':'')+'" data-cat="'+c+'">'+
-      '<span class="ci">'+cs.i+'</span><span class="cl" style="'+(on?'color:'+cs.c+';font-weight:700':'')+'">'+(c.length>4?c.substring(0,4)+'…':c)+'</span></button>';
-  }).join('');
-}
-function recRowHtml(r){
-  var cs=gc(r.category);
-  return '<div class="rec-row">'+
-    '<div class="rec-left"><div class="cat-badge" style="background:'+cs.b+'">'+cs.i+'</div>'+
-    '<div class="rec-info"><div class="rec-cat">'+r.category+' <span class="rec-person">· '+r.person+'</span></div>'+
-    (r.note?'<div class="rec-note">'+r.note+'</div>':'')+
-    '<div class="rec-date">'+r.date+'</div></div></div>'+
-    '<div class="rec-right"><div class="rec-amt" style="color:'+(r.type==='income'?'#2e7d32':'#c0505a')+'">'+(r.type==='income'?'+':'-')+fmt(r.amount)+'</div>'+
-    '<button class="edit-btn" data-id="'+r.id+'">✏️</button>'+
-    '<button class="del-btn" data-id="'+r.id+'">✕</button></div></div>';
-}
-function bindRows(el){
-  el.querySelectorAll('.edit-btn').forEach(function(b){b.addEventListener('click',function(){openEdit(Number(b.dataset.id));});});
-  el.querySelectorAll('.del-btn').forEach(function(b){b.addEventListener('click',function(){askDel(Number(b.dataset.id));});});
-}
-function monthPickerHtml(y,m){
-  var yrs=[];_records.forEach(function(r){var yr=new Date(r.date).getFullYear();if(yrs.indexOf(yr)<0)yrs.push(yr);});
-  if(yrs.indexOf(new Date().getFullYear())<0)yrs.unshift(new Date().getFullYear());
-  yrs.sort(function(a,b){return b-a;});
-  return '<div class="month-picker">'+
-    '<select class="input" id="selY">'+yrs.map(function(yr){return'<option value="'+yr+'"'+(yr===y?' selected':'')+'>'+yr+'年</option>';}).join('')+'</select>'+
-    '<select class="input" id="selM">'+MO.map(function(mo,i){return'<option value="'+i+'"'+(i===m?' selected':'')+'>'+mo+'</option>';}).join('')+'</select></div>';
-}
-
-// ═══════════════════════════════════════════════
-// DASHBOARD
-// ═══════════════════════════════════════════════
-var dY=new Date().getFullYear(),dM=new Date().getMonth();
+// Dashboard
 function renderDashboard(){
-  var mr=_records.filter(function(r){var d=new Date(r.date);return d.getFullYear()===dY&&d.getMonth()===dM;});
-  var inc=mr.filter(function(r){return r.type==='income';}).reduce(function(s,r){return s+r.amount;},0);
-  var exp=mr.filter(function(r){return r.type==='expense';}).reduce(function(s,r){return s+r.amount;},0);
+  var mr=W._records.filter(r=>{var d=new Date(r.date);return d.getFullYear()===W.dY&&d.getMonth()===W.dM;});
+  var inc=mr.filter(r=>r.type==='income').reduce((s,r)=>s+r.amount,0);
+  var exp=mr.filter(r=>r.type==='expense').reduce((s,r)=>s+r.amount,0);
   var bal=inc-exp;
-  var rec=[].concat(_records).sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,6);
+  var rec=[...W._records].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,6);
   var el=document.getElementById('tab-dashboard');
-  el.innerHTML=monthPickerHtml(dY,dM)+
-    '<div class="summary-grid">'+
-    '<div class="summary-card" style="background:linear-gradient(135deg,#f0faf0,#d6efd6)"><div class="sum-icon">💰</div><div class="sum-label">本月收入</div><div class="sum-amt" style="color:#2e7d32">'+fmt(inc)+'</div></div>'+
-    '<div class="summary-card" style="background:linear-gradient(135deg,#fdf0f3,#f5d5dc)"><div class="sum-icon">💸</div><div class="sum-label">本月支出</div><div class="sum-amt" style="color:#c0505a">'+fmt(exp)+'</div></div>'+
-    '<div class="summary-card" style="grid-column:1/-1;background:'+(bal>=0?'linear-gradient(135deg,#eff6fc,#d6e8f5)':'linear-gradient(135deg,#fff0f0,#ffd8d8)')+'"><div class="sum-icon">'+(bal>=0?'🏦':'⚠️')+'</div><div class="sum-label">本月結餘</div><div class="sum-amt" style="font-size:22px;color:'+(bal>=0?'#1565c0':'#c0505a')+'">'+fmt(bal)+'</div></div>'+
-    '</div>'+
-    '<div class="section"><div class="sec-header"><span class="sec-title">最近記錄</span><button class="link-btn" id="btnSeeAll">查看全部 →</button></div>'+
-    (rec.length?rec.map(recRowHtml).join(''):'<div class="empty">還沒有記錄，快去記帳吧！✨</div>')+
-    '</div>';
-  el.querySelector('#selY').addEventListener('change',function(){dY=Number(this.value);renderDashboard();});
-  el.querySelector('#selM').addEventListener('change',function(){dM=Number(this.value);renderDashboard();});
-  var sa=el.querySelector('#btnSeeAll');if(sa)sa.addEventListener('click',function(){goTab('history');});
+  el.innerHTML=monthPickerHtml(W.dY,W.dM)+'<div class="summary-grid"><div class="summary-card" style="background:linear-gradient(135deg,#f0faf0,#d6efd6)"><div class="sum-icon">💰</div><div class="sum-label">本月收入</div><div class="sum-amt" style="color:#2e7d32">'+fmt(inc)+'</div></div><div class="summary-card" style="background:linear-gradient(135deg,#fdf0f3,#f5d5dc)"><div class="sum-icon">💸</div><div class="sum-label">本月支出</div><div class="sum-amt" style="color:#c0505a">'+fmt(exp)+'</div></div><div class="summary-card" style="grid-column:1/-1;background:'+(bal>=0?'linear-gradient(135deg,#eff6fc,#d6e8f5)':'linear-gradient(135deg,#fff0f0,#ffd8d8)')+'"><div class="sum-icon">'+(bal>=0?'🏦':'⚠️')+'</div><div class="sum-label">本月結餘</div><div class="sum-amt" style="font-size:22px;color:'+(bal>=0?'#1565c0':'#c0505a')+'">'+fmt(bal)+'</div></div></div><div class="section"><div class="sec-header"><span class="sec-title">最近記錄</span><button class="link-btn" id="btnSeeAll">查看全部 →</button></div>'+(rec.length?rec.map(recRowHtml).join(''):'<div class="empty">還沒有記錄，快去記帳吧！✨</div>')+'</div>';
+  el.querySelector('#selY').addEventListener('change',function(){W.dY=Number(this.value);renderDashboard();});
+  el.querySelector('#selM').addEventListener('change',function(){W.dM=Number(this.value);renderDashboard();});
+  const sa=el.querySelector('#btnSeeAll');if(sa)sa.addEventListener('click',()=>goTab('history'));
   bindRows(el);
 }
 
-// ═══════════════════════════════════════════════
-// ADD RECORD
-// ═══════════════════════════════════════════════
-var aType='expense',aPerson='',aCat='',aAmt='',aNote='',aDate=todayStr();
+// Add
 function renderAdd(){
+  W.aDate=W.aDate||todayStr();
   var el=document.getElementById('tab-add');
-  el.innerHTML='<div class="page-title">新增記帳</div>'+
-    '<div class="type-toggle"><button class="type-btn'+(aType==='expense'?' exp':'')+'" id="aBtnE">💸 支出</button><button class="type-btn'+(aType==='income'?' inc':'')+'" id="aBtnI">💰 收入</button></div>'+
-    '<div class="field"><label class="label">記帳人</label><select class="input" id="aPerson"><option value="">— 請選擇記帳人 —</option>'+_persons.map(function(p){return'<option value="'+p+'"'+(p===aPerson?' selected':'')+'>'+p+'</option>';}).join('')+'</select></div>'+
-    '<div class="field"><label class="label">類別</label><div class="cat-grid" id="aCatGrid">'+catGridHtml(aType,aCat)+'</div></div>'+
-    '<div class="field"><label class="label">金額 (NT$)</label><input class="input" type="number" id="aAmt" placeholder="0" value="'+aAmt+'"></div>'+
-    '<div class="field"><label class="label">日期</label><input class="input" type="date" id="aDate" value="'+aDate+'"></div>'+
-    '<div class="field"><label class="label">備註（選填）</label><input class="input" id="aNote" placeholder="例：晚餐、信用卡帳單..." value="'+aNote+'"></div>'+
-    '<div id="aErr" class="err-msg"></div>'+
-    '<button class="btn btn-gold btn-full" style="margin-top:12px" id="aBtnAdd">新增記錄 ✓</button>';
-  el.querySelector('#aBtnE').addEventListener('click',function(){aType='expense';aCat='';renderAdd();});
-  el.querySelector('#aBtnI').addEventListener('click',function(){aType='income';aCat='';renderAdd();});
-  el.querySelector('#aPerson').addEventListener('change',function(){aPerson=this.value;});
-  el.querySelector('#aAmt').addEventListener('input',function(){aAmt=this.value;});
-  el.querySelector('#aDate').addEventListener('change',function(){aDate=this.value;});
-  el.querySelector('#aNote').addEventListener('input',function(){aNote=this.value;});
-  el.querySelectorAll('#aCatGrid .cat-chip').forEach(function(b){b.addEventListener('click',function(){aCat=b.dataset.cat;renderAdd();});});
-  el.querySelector('#aBtnAdd').addEventListener('click',function(){
-    if(!aAmt||isNaN(aAmt)||Number(aAmt)<=0){document.getElementById('aErr').textContent='請輸入有效金額';return;}
-    if(!aPerson){document.getElementById('aErr').textContent='請選擇記帳人';return;}
-    if(!aCat){document.getElementById('aErr').textContent='請選擇類別';return;}
-    _records.unshift({id:Date.now(),type:aType,amount:Number(aAmt),category:aCat,person:aPerson,note:aNote,date:aDate});
-    saveDB(); aAmt='';aNote='';aDate=todayStr();
-    showToast('✅ 記帳成功！'); goTab('dashboard');
+  el.innerHTML='<div class="page-title">新增記帳</div><div class="type-toggle"><button class="type-btn'+(W.aType==='expense'?' exp':'')+'" id="aBtnE">💸 支出</button><button class="type-btn'+(W.aType==='income'?' inc':'')+'" id="aBtnI">💰 收入</button></div><div class="field"><label class="label">記帳人</label><select class="input" id="aPerson"><option value="">— 請選擇記帳人 —</option>'+W._persons.map(p=>'<option value="'+p+'"'+(p===W.aPerson?' selected':'')+'>'+p+'</option>').join('')+'</select></div><div class="field"><label class="label">類別</label><div class="cat-grid" id="aCatGrid">'+catGridHtml(W.aType,W.aCat)+'</div></div><div class="field"><label class="label">金額 (NT$)</label><input class="input" type="number" id="aAmt" placeholder="0" value="'+W.aAmt+'"></div><div class="field"><label class="label">日期</label><input class="input" type="date" id="aDate" value="'+W.aDate+'"></div><div class="field"><label class="label">備註（選填）</label><input class="input" id="aNote" placeholder="例：晚餐、信用卡帳單..." value="'+W.aNote+'"></div><div id="aErr" class="err-msg"></div><button class="btn btn-gold btn-full" style="margin-top:12px" id="aBtnAdd">新增記錄 ✓</button>';
+  el.querySelector('#aBtnE').addEventListener('click',()=>{W.aType='expense';W.aCat='';renderAdd();});
+  el.querySelector('#aBtnI').addEventListener('click',()=>{W.aType='income';W.aCat='';renderAdd();});
+  el.querySelector('#aPerson').addEventListener('change',function(){W.aPerson=this.value;});
+  el.querySelector('#aAmt').addEventListener('input',function(){W.aAmt=this.value;});
+  el.querySelector('#aDate').addEventListener('change',function(){W.aDate=this.value;});
+  el.querySelector('#aNote').addEventListener('input',function(){W.aNote=this.value;});
+  el.querySelectorAll('#aCatGrid .cat-chip').forEach(b=>b.addEventListener('click',()=>{W.aCat=b.dataset.cat;renderAdd();}));
+  el.querySelector('#aBtnAdd').addEventListener('click',()=>{
+    if(!W.aAmt||isNaN(W.aAmt)||Number(W.aAmt)<=0){document.getElementById('aErr').textContent='請輸入有效金額';return;}
+    if(!W.aPerson){document.getElementById('aErr').textContent='請選擇記帳人';return;}
+    if(!W.aCat){document.getElementById('aErr').textContent='請選擇類別';return;}
+    W._records.unshift({id:Date.now(),type:W.aType,amount:Number(W.aAmt),category:W.aCat,person:W.aPerson,note:W.aNote,date:W.aDate});
+    saveDB();W.aAmt='';W.aNote='';W.aDate=todayStr();
+    showToast('✅ 記帳成功！');goTab('dashboard');
   });
 }
 
-// ═══════════════════════════════════════════════
-// REPORT
-// ═══════════════════════════════════════════════
-var rMode='month',rY=new Date().getFullYear(),rM=new Date().getMonth(),rS='',rE='';
-function getRepRec(){
-  if(rMode==='custom'){
-    if(!rS||!rE)return[];
-    var s=new Date(rS+'T00:00:00'),e=new Date(rE+'T23:59:59');
-    return _records.filter(function(r){var d=new Date(r.date);return d>=s&&d<=e;});
-  }
-  return _records.filter(function(r){var d=new Date(r.date);return d.getFullYear()===rY&&d.getMonth()===rM;});
-}
+// Report
+function getRepRec(){if(W.rMode==='custom'){if(!W.rS||!W.rE)return[];var s=new Date(W.rS+'T00:00:00'),e=new Date(W.rE+'T23:59:59');return W._records.filter(r=>{var d=new Date(r.date);return d>=s&&d<=e;});}return W._records.filter(r=>{var d=new Date(r.date);return d.getFullYear()===W.rY&&d.getMonth()===W.rM;});}
 function renderReport(){
   var mr=getRepRec();
-  var inc=mr.filter(function(r){return r.type==='income';}).reduce(function(s,r){return s+r.amount;},0);
-  var exp=mr.filter(function(r){return r.type==='expense';}).reduce(function(s,r){return s+r.amount;},0);
+  var inc=mr.filter(r=>r.type==='income').reduce((s,r)=>s+r.amount,0);
+  var exp=mr.filter(r=>r.type==='expense').reduce((s,r)=>s+r.amount,0);
   var bal=inc-exp;
-  var ebc=(_cats.expense||[]).map(function(cat){return{cat:cat,total:mr.filter(function(r){return r.type==='expense'&&r.category===cat;}).reduce(function(s,r){return s+r.amount;},0)};}).filter(function(c){return c.total>0;}).sort(function(a,b){return b.total-a.total;});
+  var ebc=(W._cats.expense||[]).map(cat=>({cat,total:mr.filter(r=>r.type==='expense'&&r.category===cat).reduce((s,r)=>s+r.amount,0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
   var mx=ebc.length?ebc[0].total:1;
-  var iP={},eP={};mr.forEach(function(r){var p=r.person||'未知';if(r.type==='income')iP[p]=(iP[p]||0)+r.amount;else eP[p]=(eP[p]||0)+r.amount;});
-  var aP=Object.keys(Object.assign({},iP,eP));
-  var yrs=[];_records.forEach(function(r){var y=new Date(r.date).getFullYear();if(yrs.indexOf(y)<0)yrs.push(y);});
-  if(yrs.indexOf(new Date().getFullYear())<0)yrs.unshift(new Date().getFullYear());
-  yrs.sort(function(a,b){return b-a;});
+  var iP={},eP={};mr.forEach(r=>{var p=r.person||'未知';if(r.type==='income')iP[p]=(iP[p]||0)+r.amount;else eP[p]=(eP[p]||0)+r.amount;});
+  var aP=Object.keys({...iP,...eP});
+  var yrs=[];W._records.forEach(r=>{var y=new Date(r.date).getFullYear();if(!yrs.includes(y))yrs.push(y);});
+  if(!yrs.includes(new Date().getFullYear()))yrs.unshift(new Date().getFullYear());yrs.sort((a,b)=>b-a);
   var el=document.getElementById('tab-report');
-  el.innerHTML='<div class="page-title">報表</div>'+
-    '<div class="period-pills"><button class="pill'+(rMode==='month'?' active':'')+'" data-m="month">📅 月份</button><button class="pill'+(rMode==='custom'?' active':'')+'" data-m="custom">📆 自訂區間</button></div>'+
-    (rMode==='month'?
-      '<div class="month-picker"><select class="input" id="rY">'+yrs.map(function(y){return'<option value="'+y+'"'+(y===rY?' selected':'')+'>'+y+'年</option>';}).join('')+'</select><select class="input" id="rM">'+MO.map(function(m,i){return'<option value="'+i+'"'+(i===rM?' selected':'')+'>'+m+'</option>';}).join('')+'</select></div>':
-      '<div class="date-range"><input class="input" type="date" id="rS" value="'+rS+'"><span>～</span><input class="input" type="date" id="rE" value="'+rE+'"><button class="btn btn-gold btn-sm" id="btnRQ" style="white-space:nowrap">查詢</button></div>')+
-    '<div class="report-cards">'+
-    '<div class="rep-card"><div class="rep-icon">💰</div><div class="r-label">總收入</div><div class="r-amt" style="color:#2e7d32">'+fmt(inc)+'</div></div>'+
-    '<div class="rep-card"><div class="rep-icon">💸</div><div class="r-label">總支出</div><div class="r-amt" style="color:#c0505a">'+fmt(exp)+'</div></div>'+
-    '<div class="rep-card" style="grid-column:1/-1"><div class="rep-icon">'+(bal>=0?'🏦':'⚠️')+'</div><div class="r-label">結餘</div><div class="r-amt" style="font-size:24px;color:'+(bal>=0?'#1565c0':'#c0505a')+'">'+fmt(bal)+'</div></div>'+
-    '</div>'+
-    (ebc.length?'<div class="section"><span class="sec-title">支出分類</span>'+ebc.map(function(ec){var cs=gc(ec.cat);return'<div class="bar-row"><div class="bar-icon" style="background:'+cs.b+';color:'+cs.c+'">'+cs.i+'</div><div class="bar-label">'+ec.cat+'</div><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(ec.total/mx*100)+'%;background:linear-gradient(90deg,'+cs.c+'88,'+cs.c+')"></div></div><div class="bar-amt">'+fmt(ec.total)+'</div></div>';}).join('')+'</div>':'')+
-    (aP.length?'<div class="section"><span class="sec-title">個人統計</span>'+aP.map(function(p){return'<div class="person-row"><div style="font-weight:700">👤 '+p+'</div><div style="display:flex;gap:12px;font-size:13px">'+(iP[p]?'<span style="color:#2e7d32">收 '+fmt(iP[p])+'</span>':'')+(eP[p]?'<span style="color:#c0505a">支 '+fmt(eP[p])+'</span>':'')+'</div></div>';}).join('')+'</div>':'')+
-    (mr.length===0?'<div class="empty">此期間尚無記錄</div>':'');
-  el.querySelectorAll('.pill').forEach(function(p){p.addEventListener('click',function(){rMode=p.dataset.m;renderReport();});});
-  if(rMode==='month'){
-    el.querySelector('#rY').addEventListener('change',function(){rY=Number(this.value);renderReport();});
-    el.querySelector('#rM').addEventListener('change',function(){rM=Number(this.value);renderReport();});
-  } else {
-    el.querySelector('#rS').addEventListener('change',function(){rS=this.value;});
-    el.querySelector('#rE').addEventListener('change',function(){rE=this.value;});
-    el.querySelector('#btnRQ').addEventListener('click',function(){rS=el.querySelector('#rS').value;rE=el.querySelector('#rE').value;if(!rS||!rE){showToast('請選擇開始和結束日期','err');return;}renderReport();});
-  }
+  el.innerHTML='<div class="page-title">報表</div><div class="period-pills"><button class="pill'+(W.rMode==='month'?' active':'')+'" data-m="month">📅 月份</button><button class="pill'+(W.rMode==='custom'?' active':'')+'" data-m="custom">📆 自訂區間</button></div>'+(W.rMode==='month'?'<div class="month-picker"><select class="input" id="rY">'+yrs.map(y=>'<option value="'+y+'"'+(y===W.rY?' selected':'')+'>'+y+'年</option>').join('')+'</select><select class="input" id="rM">'+MO.map((m,i)=>'<option value="'+i+'"'+(i===W.rM?' selected':'')+'>'+m+'</option>').join('')+'</select></div>':'<div class="date-range"><input class="input" type="date" id="rS" value="'+W.rS+'"><span>～</span><input class="input" type="date" id="rE" value="'+W.rE+'"><button class="btn btn-gold btn-sm" id="btnRQ" style="white-space:nowrap">查詢</button></div>')+'<div class="report-cards"><div class="rep-card"><div class="rep-icon">💰</div><div class="r-label">總收入</div><div class="r-amt" style="color:#2e7d32">'+fmt(inc)+'</div></div><div class="rep-card"><div class="rep-icon">💸</div><div class="r-label">總支出</div><div class="r-amt" style="color:#c0505a">'+fmt(exp)+'</div></div><div class="rep-card" style="grid-column:1/-1"><div class="rep-icon">'+(bal>=0?'🏦':'⚠️')+'</div><div class="r-label">結餘</div><div class="r-amt" style="font-size:24px;color:'+(bal>=0?'#1565c0':'#c0505a')+'">'+fmt(bal)+'</div></div></div>'+(ebc.length?'<div class="section"><span class="sec-title">支出分類</span>'+ebc.map(ec=>{var cs=gc(ec.cat);return'<div class="bar-row"><div class="bar-icon" style="background:'+cs.b+';color:'+cs.c+'">'+cs.i+'</div><div class="bar-label">'+ec.cat+'</div><div class="bar-track"><div class="bar-fill" style="width:'+Math.round(ec.total/mx*100)+'%;background:linear-gradient(90deg,'+cs.c+'88,'+cs.c+')"></div></div><div class="bar-amt">'+fmt(ec.total)+'</div></div>';}).join('')+'</div>':'')+(aP.length?'<div class="section"><span class="sec-title">個人統計</span>'+aP.map(p=>'<div class="person-row"><div style="font-weight:700">👤 '+p+'</div><div style="display:flex;gap:12px;font-size:13px">'+(iP[p]?'<span style="color:#2e7d32">收 '+fmt(iP[p])+'</span>':'')+(eP[p]?'<span style="color:#c0505a">支 '+fmt(eP[p])+'</span>':'')+'</div></div>').join('')+'</div>':'')+(mr.length===0?'<div class="empty">此期間尚無記錄</div>':'');
+  el.querySelectorAll('.pill').forEach(p=>p.addEventListener('click',()=>{W.rMode=p.dataset.m;renderReport();}));
+  if(W.rMode==='month'){el.querySelector('#rY').addEventListener('change',function(){W.rY=Number(this.value);renderReport();});el.querySelector('#rM').addEventListener('change',function(){W.rM=Number(this.value);renderReport();});}
+  else{el.querySelector('#rS').addEventListener('change',function(){W.rS=this.value;});el.querySelector('#rE').addEventListener('change',function(){W.rE=this.value;});el.querySelector('#btnRQ').addEventListener('click',()=>{W.rS=el.querySelector('#rS').value;W.rE=el.querySelector('#rE').value;if(!W.rS||!W.rE){showToast('請選擇開始和結束日期','err');return;}renderReport();});}
 }
 
-// ═══════════════════════════════════════════════
-// HISTORY
-// ═══════════════════════════════════════════════
-var hF='all',hS='';
+// History
 function renderHistory(){
-  var sorted=[].concat(_records).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
-  var fil=sorted.filter(function(r){
-    if(hF==='income'&&r.type!=='income')return false;
-    if(hF==='expense'&&r.type!=='expense')return false;
-    if(hS&&(r.category+' '+(r.note||'')+' '+r.person).indexOf(hS)<0)return false;
-    return true;
-  });
+  var sorted=[...W._records].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  var fil=sorted.filter(r=>{if(W.hF==='income'&&r.type!=='income')return false;if(W.hF==='expense'&&r.type!=='expense')return false;if(W.hS&&!(r.category+' '+(r.note||'')+' '+r.person).includes(W.hS))return false;return true;});
   var el=document.getElementById('tab-history');
-  el.innerHTML='<div class="page-title">帳目明細</div>'+
-    '<div class="hist-filters"><input class="input" style="flex:1" placeholder="搜尋備註、類別、人名..." id="hSearch" value="'+hS+'">'+
-    '<select class="input" style="width:90px" id="hFilter"><option value="all"'+(hF==='all'?' selected':'')+'>全部</option><option value="income"'+(hF==='income'?' selected':'')+'>收入</option><option value="expense"'+(hF==='expense'?' selected':'')+'>支出</option></select></div>'+
-    (fil.length?fil.map(recRowHtml).join(''):'<div class="empty">沒有符合的記錄</div>');
-  el.querySelector('#hSearch').addEventListener('input',function(){hS=this.value;renderHistory();});
-  el.querySelector('#hFilter').addEventListener('change',function(){hF=this.value;renderHistory();});
+  el.innerHTML='<div class="page-title">帳目明細</div><div class="hist-filters"><input class="input" style="flex:1" placeholder="搜尋備註、類別、人名..." id="hSearch" value="'+W.hS+'"><select class="input" style="width:90px" id="hFilter"><option value="all"'+(W.hF==='all'?' selected':'')+'>全部</option><option value="income"'+(W.hF==='income'?' selected':'')+'>收入</option><option value="expense"'+(W.hF==='expense'?' selected':'')+'>支出</option></select></div>'+(fil.length?fil.map(recRowHtml).join(''):'<div class="empty">沒有符合的記錄</div>');
+  el.querySelector('#hSearch').addEventListener('input',function(){W.hS=this.value;renderHistory();});
+  el.querySelector('#hFilter').addEventListener('change',function(){W.hF=this.value;renderHistory();});
   bindRows(el);
 }
 
-// ═══════════════════════════════════════════════
-// SETTINGS
-// ═══════════════════════════════════════════════
-var sTab='expense',sNew='';
+// Settings
 function renderSettings(){
-  var list=sTab==='persons'?_persons:(_cats[sTab]||[]);
+  var list=W.sTab==='persons'?W._persons:(W._cats[W.sTab]||[]);
   var el=document.getElementById('tab-settings');
-  el.innerHTML='<div class="page-title">設定管理</div>'+
-    '<div class="sett-tabs"><button class="sett-tab'+(sTab==='expense'?' active':'')+'" data-st="expense">💸 支出</button><button class="sett-tab'+(sTab==='income'?' active':'')+'" data-st="income">💰 收入</button><button class="sett-tab'+(sTab==='persons'?' active':'')+'" data-st="persons">👤 記帳人</button></div>'+
-    '<div style="font-size:13px;color:#888;margin-bottom:14px">'+(sTab==='expense'?'管理支出類別':sTab==='income'?'管理收入類別':'管理記帳人名稱')+'</div>'+
-    '<div class="tag-list">'+list.map(function(item){var cs=sTab!=='persons'?gc(item):{i:'👤',c:'#C9A84C',b:'#FDF6E3'};return'<div class="tag" style="background:'+cs.b+';border:1px solid '+cs.c+'44"><span style="font-size:15px">'+cs.i+'</span><span style="color:'+cs.c+'">'+item+'</span><button class="tag-del" data-item="'+item+'">✕</button></div>';}).join('')+(list.length===0?'<div style="color:#ccc;font-size:13px">尚無項目</div>':'')+'</div>'+
-    '<div style="display:flex;gap:8px;align-items:center"><input class="input" style="flex:1" placeholder="'+(sTab==='persons'?'輸入姓名，例：媽媽':'輸入新類別名稱')+'" id="sNew" value="'+sNew+'"><button class="btn btn-gold btn-sm" id="sBtnAdd" style="white-space:nowrap">新增</button></div>'+
-    '<div class="cloud-note">☁️ 所有設定即時同步至 Firebase</div>';
-  el.querySelectorAll('.sett-tab').forEach(function(b){b.addEventListener('click',function(){sTab=b.dataset.st;sNew='';renderSettings();});});
-  el.querySelectorAll('.tag-del').forEach(function(b){b.addEventListener('click',function(){
-    var item=b.dataset.item;
-    if(sTab==='persons'){if(_persons.length<=1){showToast('至少保留一位','err');return;}_persons=_persons.filter(function(p){return p!==item;});}
-    else{_cats[sTab]=(_cats[sTab]||[]).filter(function(c){return c!==item;});}
-    saveDB();showToast('已刪除','err');renderSettings();
-  });});
-  el.querySelector('#sNew').addEventListener('input',function(){sNew=this.value;});
-  el.querySelector('#sBtnAdd').addEventListener('click',function(){
-    var v=sNew.trim();if(!v)return;
-    if(sTab==='persons'){if(_persons.indexOf(v)>=0){showToast('已有相同名稱','err');return;}_persons.push(v);}
-    else{if((_cats[sTab]||[]).indexOf(v)>=0){showToast('類別已存在','err');return;}_cats[sTab]=(_cats[sTab]||[]).concat([v]);}
-    sNew='';saveDB();showToast('✅ 新增成功！');renderSettings();
-  });
+  el.innerHTML='<div class="page-title">設定管理</div><div class="sett-tabs"><button class="sett-tab'+(W.sTab==='expense'?' active':'')+'" data-st="expense">💸 支出</button><button class="sett-tab'+(W.sTab==='income'?' active':'')+'" data-st="income">💰 收入</button><button class="sett-tab'+(W.sTab==='persons'?' active':'')+'" data-st="persons">👤 記帳人</button></div><div style="font-size:13px;color:#888;margin-bottom:14px">'+(W.sTab==='expense'?'管理支出類別':W.sTab==='income'?'管理收入類別':'管理記帳人名稱')+'</div><div class="tag-list">'+list.map(item=>{var cs=W.sTab!=='persons'?gc(item):{i:'👤',c:'#C9A84C',b:'#FDF6E3'};return'<div class="tag" style="background:'+cs.b+';border:1px solid '+cs.c+'44"><span style="font-size:15px">'+cs.i+'</span><span style="color:'+cs.c+'">'+item+'</span><button class="tag-del" data-item="'+item+'">✕</button></div>';}).join('')+(list.length===0?'<div style="color:#ccc;font-size:13px">尚無項目</div>':'')+'</div><div style="display:flex;gap:8px;align-items:center"><input class="input" style="flex:1" placeholder="'+(W.sTab==='persons'?'輸入姓名，例：媽媽':'輸入新類別名稱')+'" id="sNew" value="'+W.sNew+'"><button class="btn btn-gold btn-sm" id="sBtnAdd" style="white-space:nowrap">新增</button></div><div class="cloud-note">☁️ 所有設定即時同步至 Firebase</div>';
+  el.querySelectorAll('.sett-tab').forEach(b=>b.addEventListener('click',()=>{W.sTab=b.dataset.st;W.sNew='';renderSettings();}));
+  el.querySelectorAll('.tag-del').forEach(b=>b.addEventListener('click',()=>{var item=b.dataset.item;if(W.sTab==='persons'){if(W._persons.length<=1){showToast('至少保留一位','err');return;}W._persons=W._persons.filter(p=>p!==item);}else{W._cats[W.sTab]=(W._cats[W.sTab]||[]).filter(c=>c!==item);}saveDB();showToast('已刪除','err');renderSettings();}));
+  el.querySelector('#sNew').addEventListener('input',function(){W.sNew=this.value;});
+  el.querySelector('#sBtnAdd').addEventListener('click',()=>{var v=W.sNew.trim();if(!v)return;if(W.sTab==='persons'){if(W._persons.includes(v)){showToast('已有相同名稱','err');return;}W._persons.push(v);}else{if((W._cats[W.sTab]||[]).includes(v)){showToast('類別已存在','err');return;}W._cats[W.sTab]=(W._cats[W.sTab]||[]).concat([v]);}W.sNew='';saveDB();showToast('✅ 新增成功！');renderSettings();});
 }
 
-// ═══════════════════════════════════════════════
-// EDIT
-// ═══════════════════════════════════════════════
-var editId=null,editType='expense',editCat='';
-function refreshEditType(){
-  document.getElementById('editBtnExp').className='type-btn'+(editType==='expense'?' exp':'');
-  document.getElementById('editBtnInc').className='type-btn'+(editType==='income'?' inc':'');
-  document.getElementById('editCatGrid').innerHTML=catGridHtml(editType,editCat);
-  document.querySelectorAll('#editCatGrid .cat-chip').forEach(function(b){b.addEventListener('click',function(){editCat=b.dataset.cat;refreshEditType();});});
-}
-function openEdit(id){
-  var r=_records.filter(function(x){return x.id===id;})[0];if(!r)return;
-  editId=id;editType=r.type;editCat=r.category;
-  var sel=document.getElementById('editPerson');
-  sel.innerHTML='<option value="">— 請選擇記帳人 —</option>'+_persons.map(function(p){return'<option value="'+p+'"'+(p===r.person?' selected':'')+'>'+p+'</option>';}).join('');
-  document.getElementById('editAmt').value=r.amount;
-  document.getElementById('editDate').value=r.date;
-  document.getElementById('editNote').value=r.note||'';
-  document.getElementById('editErr').textContent='';
-  refreshEditType();
-  document.getElementById('editModal').classList.add('open');
-}
-function confirmEdit(){
-  var amt=document.getElementById('editAmt').value;
-  var person=document.getElementById('editPerson').value;
-  var date=document.getElementById('editDate').value;
-  var note=document.getElementById('editNote').value;
+// Edit
+function refreshEditType(){document.getElementById('editBtnExp').className='type-btn'+(W.editType==='expense'?' exp':'');document.getElementById('editBtnInc').className='type-btn'+(W.editType==='income'?' inc':'');document.getElementById('editCatGrid').innerHTML=catGridHtml(W.editType,W.editCat);document.querySelectorAll('#editCatGrid .cat-chip').forEach(b=>b.addEventListener('click',()=>{W.editCat=b.dataset.cat;refreshEditType();}));}
+function openEdit(id){var r=W._records.find(x=>x.id===id);if(!r)return;W.editId=id;W.editType=r.type;W.editCat=r.category;var sel=document.getElementById('editPerson');sel.innerHTML='<option value="">— 請選擇記帳人 —</option>'+W._persons.map(p=>'<option value="'+p+'"'+(p===r.person?' selected':'')+'>'+p+'</option>').join('');document.getElementById('editAmt').value=r.amount;document.getElementById('editDate').value=r.date;document.getElementById('editNote').value=r.note||'';document.getElementById('editErr').textContent='';refreshEditType();document.getElementById('editModal').classList.add('open');}
+function askDel(id){W.pendingDel=id;document.getElementById('confirmModal').classList.add('open');}
+
+document.getElementById('editBtnExp').addEventListener('click',()=>{W.editType='expense';W.editCat='';refreshEditType();});
+document.getElementById('editBtnInc').addEventListener('click',()=>{W.editType='income';W.editCat='';refreshEditType();});
+document.getElementById('btnCancelEdit').addEventListener('click',()=>document.getElementById('editModal').classList.remove('open'));
+document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});
+document.getElementById('btnConfirmEdit').addEventListener('click',()=>{
+  var amt=document.getElementById('editAmt').value,person=document.getElementById('editPerson').value,date=document.getElementById('editDate').value,note=document.getElementById('editNote').value;
   if(!amt||isNaN(amt)||Number(amt)<=0){document.getElementById('editErr').textContent='請輸入有效金額';return;}
   if(!person){document.getElementById('editErr').textContent='請選擇記帳人';return;}
-  if(!editCat){document.getElementById('editErr').textContent='請選擇類別';return;}
-  for(var i=0;i<_records.length;i++){
-    if(_records[i].id===editId){
-      _records[i]=Object.assign({},_records[i],{type:editType,amount:Number(amt),category:editCat,person:person,date:date,note:note});
-      break;
-    }
-  }
-  saveDB();showToast('✅ 修改成功！');
-  document.getElementById('editModal').classList.remove('open');
-  renderTab(curTab);
-}
-
-// ═══════════════════════════════════════════════
-// DELETE
-// ═══════════════════════════════════════════════
-var pendingDel=null;
-function askDel(id){pendingDel=id;document.getElementById('confirmModal').classList.add('open');}
+  if(!W.editCat){document.getElementById('editErr').textContent='請選擇類別';return;}
+  var idx=W._records.findIndex(x=>x.id===W.editId);
+  if(idx>-1){W._records[idx]=Object.assign({},W._records[idx],{type:W.editType,amount:Number(amt),category:W.editCat,person,date,note});}
+  saveDB();showToast('✅ 修改成功！');document.getElementById('editModal').classList.remove('open');W.renderTab(W.curTab);
+});
+document.getElementById('btnExecDel').addEventListener('click',()=>{if(!W.pendingDel)return;W._records=W._records.filter(r=>r.id!==W.pendingDel);saveDB();W.pendingDel=null;document.getElementById('confirmModal').classList.remove('open');showToast('已刪除','err');W.renderTab(W.curTab);});
+document.getElementById('btnCancelDel').addEventListener('click',()=>{document.getElementById('confirmModal').classList.remove('open');W.pendingDel=null;});
+document.getElementById('confirmModal').addEventListener('click',function(e){if(e.target===this){this.classList.remove('open');W.pendingDel=null;}});
 </script>
 </body>
 </html>
